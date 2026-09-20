@@ -1,0 +1,20 @@
+# Subproject Dependencies
+node_modules/
+package-lock.json
+
+# Zepp Build Outputs
+dist/
+*.zab
+
+# Embedded Binary Assets
+assets/
+*.png
+*.bin
+*.r2d
+
+# IDE & Editor Metadata
+.vscode/
+.idea/
+
+# Simulator & Runtime Logs
+*.log

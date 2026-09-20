@@ -1,0 +1,41 @@
+# Dependencies & Package Managers
+node_modules/
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Build Artifacts & Bundles
+dist/
+build/
+*.zab
+*.deb
+*.apk
+*.aab
+*.zip
+*.tar.gz
+
+# Git & System Artifacts
+.git/
+.gitignore
+.DS_Store
+Thumbs.db
+
+# Logs & Diagnostics
+*.log
+npm-debug.log*
+yarn-debug.log*
+
+# Static & Binary Assets
+*.png
+*.jpg
+*.jpeg
+*.svg
+*.ico
+*.bin
+*.r2d
+
+# IDE & Tooling Configs
+.vscode/
+.idea/
+.fleet/
+.fleet-run/
