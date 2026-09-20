@@ -1,3 +1,2 @@
-
 msgid "appName"
-msgstr "Hello World3"
+msgstr "Apto Timer"
