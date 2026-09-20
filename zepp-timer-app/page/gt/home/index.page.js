@@ -1,15 +1,27 @@
+/**
+ * Kontroler widoku i cyklu życia Zepp OS dla ekranu głównego timera.
+ * Odpowiedzialność: Tworzenie widżetów, obsługa timera sprzętowego, eventy dotykowe, czyszczenie zasobów.
+ */
 import * as hmUI from "@zos/ui";
 import * as timer from "@zos/timer";
 import { log as Logger } from "@zos/utils";
 
-const logger = Logger.getLogger("balance-timer");
+import { HomeTimerLogic, TIMER_STATE } from "./index.class.js";
+import {
+  BG_ARC_STYLE,
+  PROGRESS_ARC_STYLE,
+  TIME_TEXT_STYLE,
+  STATUS_TEXT_STYLE,
+  STATUS_CONFIG
+} from "./index.style.js";
+import { haptic } from "../../../services/haptic.js";
+
+const logger = Logger.getLogger("apto-timer-page");
 
 Page({
   state: {
-    totalDurationMs: 15 * 1000,
-    remainingMs: 15 * 1000,
+    logic: null,
     intervalTimer: null,
-    isRunning: false,
     progressArc: null,
     timeText: null,
     statusText: null,
@@ -17,85 +29,50 @@ Page({
   },
 
   build() {
-    const SCREEN_SIZE = 480;
-    const CENTER = SCREEN_SIZE / 2;
-    const RADIUS = 210;
-    const LINE_WIDTH = 14;
+    logger.info("Initializing Apto-Timer Home page");
 
-    // 1. Tło łuku (ciemny statyczny okrąg)
-    hmUI.createWidget(hmUI.widget.ARC, {
-      x: 0,
-      y: 0,
-      w: SCREEN_SIZE,
-      h: SCREEN_SIZE,
-      center_x: CENTER,
-      center_y: CENTER,
-      radius: RADIUS,
-      start_angle: -90,
-      end_angle: 270,
-      color: 0x262626,
-      line_width: LINE_WIDTH
+    // 1. Inicjalizacja czystej logiki domenowej
+    this.state.logic = new HomeTimerLogic({
+      totalDurationMs: 15 * 1000,
+      updateIntervalMs: this.state.updateIntervalMs
     });
 
-    // 2. Aktywny łuk postępu (cyjan)
-    this.state.progressArc = hmUI.createWidget(hmUI.widget.ARC, {
-      x: 0,
-      y: 0,
-      w: SCREEN_SIZE,
-      h: SCREEN_SIZE,
-      center_x: CENTER,
-      center_y: CENTER,
-      radius: RADIUS,
-      start_angle: -90,
-      end_angle: 270,
-      color: 0x00e5ff,
-      line_width: LINE_WIDTH
-    });
+    // 2. Tworzenie widżetów UI
+    // Tło łuku zegara (statyczne)
+    hmUI.createWidget(hmUI.widget.ARC, BG_ARC_STYLE);
 
-    // 3. Tekst cyfrowy z czasem
+    // Dynamiczny łuk postępu
+    this.state.progressArc = hmUI.createWidget(
+      hmUI.widget.ARC,
+      PROGRESS_ARC_STYLE
+    );
+
+    // Główny tekst cyfrowy z czasem
     this.state.timeText = hmUI.createWidget(hmUI.widget.TEXT, {
-      x: 0,
-      y: CENTER - 50,
-      w: SCREEN_SIZE,
-      h: 70,
-      color: 0xffffff,
-      text_size: 60,
-      align_h: hmUI.align.CENTER_H,
-      align_v: hmUI.align.CENTER_V,
-      text: this.formatTime(this.state.remainingMs)
+      ...TIME_TEXT_STYLE,
+      text: this.state.logic.formattedTime
     });
 
-    // 4. Etykieta pomocnicza ze statusem
-    this.state.statusText = hmUI.createWidget(hmUI.widget.TEXT, {
-      x: 0,
-      y: CENTER + 30,
-      w: SCREEN_SIZE,
-      h: 30,
-      color: 0x888888,
-      text_size: 20,
-      align_h: hmUI.align.CENTER_H,
-      align_v: hmUI.align.CENTER_V,
-      text: "DOTKNIJ TEKST, ABY STARTOWAĆ"
-    });
+    // Etykieta pomocnicza ze statusem
+    this.state.statusText = hmUI.createWidget(
+      hmUI.widget.TEXT,
+      STATUS_TEXT_STYLE
+    );
 
-    // 5. Obsługa dotyku bezpośrednio na środkowym tekście
+    // 3. Rejestracja zdarzeń dotykowych
     this.state.timeText.addEventListener(hmUI.event.CLICK_DOWN, () => {
-      this.toggleTimer();
+      this.handleToggle();
     });
+
     this.state.statusText.addEventListener(hmUI.event.CLICK_DOWN, () => {
-      this.toggleTimer();
+      this.handleToggle();
     });
   },
 
-  formatTime(ms) {
-    const totalSeconds = Math.ceil(ms / 1000);
-    const m = Math.floor(totalSeconds / 60).toString().padStart(2, "0");
-    const s = (totalSeconds % 60).toString().padStart(2, "0");
-    return `${m}:${s}`;
-  },
+  handleToggle() {
+    haptic.tap();
 
-  toggleTimer() {
-    if (this.state.isRunning) {
+    if (this.state.logic.isRunning) {
       this.pauseTimer();
     } else {
       this.startTimer();
@@ -103,64 +80,73 @@ Page({
   },
 
   startTimer() {
-    if (this.state.remainingMs <= 0) return;
+    this.state.logic.start();
 
-    this.state.isRunning = true;
+    // Zaktualizuj stan etykiety
+    const statusCfg = STATUS_CONFIG[TIMER_STATE.RUNNING];
     this.state.statusText.setProperty(hmUI.prop.MORE, {
-      text: "ODLICZANIE...",
-      color: 0x00e5ff
+      text: statusCfg.text,
+      color: statusCfg.color
     });
 
-    const { updateIntervalMs, totalDurationMs } = this.state;
+    // Uruchom timer sprzętowy @zos/timer (~30 FPS)
+    const { updateIntervalMs } = this.state;
+    this.stopHardwareTimer();
 
     this.state.intervalTimer = timer.createTimer(
       0,
       updateIntervalMs,
       () => {
-        this.state.remainingMs -= updateIntervalMs;
-
-        if (this.state.remainingMs <= 0) {
-          this.state.remainingMs = 0;
-          this.pauseTimer();
-          this.state.statusText.setProperty(hmUI.prop.MORE, {
-            text: "KONIEC!",
-            color: 0xff3b30
-          });
-        }
-
-        const progress = this.state.remainingMs / totalDurationMs;
-        const currentEndAngle = -90 + progress * 360;
-
-        this.state.progressArc.setProperty(hmUI.prop.MORE, {
-          end_angle: currentEndAngle
-        });
-
-        this.state.timeText.setProperty(hmUI.prop.MORE, {
-          text: this.formatTime(this.state.remainingMs)
-        });
+        this.handleTick();
       }
     );
   },
 
-  pauseTimer() {
-    if (this.state.intervalTimer) {
-      timer.stopTimer(this.state.intervalTimer);
-      this.state.intervalTimer = null;
-    }
-    this.state.isRunning = false;
+  handleTick() {
+    const snapshot = this.state.logic.tick(this.state.updateIntervalMs);
 
-    if (this.state.remainingMs > 0) {
+    // Mutacja widżetów bez niszczenia i tworzenia na nowo
+    this.state.progressArc.setProperty(hmUI.prop.MORE, {
+      end_angle: snapshot.endAngle
+    });
+
+    this.state.timeText.setProperty(hmUI.prop.MORE, {
+      text: snapshot.formattedTime
+    });
+
+    if (snapshot.isFinished) {
+      this.stopHardwareTimer();
+      haptic.finish();
+
+      const finishCfg = STATUS_CONFIG[TIMER_STATE.FINISHED];
       this.state.statusText.setProperty(hmUI.prop.MORE, {
-        text: "ZATRZYMANY",
-        color: 0xffcc00
+        text: finishCfg.text,
+        color: finishCfg.color
       });
     }
   },
 
-  onDestroy() {
+  pauseTimer() {
+    this.stopHardwareTimer();
+    this.state.logic.pause();
+
+    const pauseCfg = STATUS_CONFIG[TIMER_STATE.PAUSED];
+    this.state.statusText.setProperty(hmUI.prop.MORE, {
+      text: pauseCfg.text,
+      color: pauseCfg.color
+    });
+  },
+
+  stopHardwareTimer() {
     if (this.state.intervalTimer) {
       timer.stopTimer(this.state.intervalTimer);
       this.state.intervalTimer = null;
     }
+  },
+
+  onDestroy() {
+    logger.info("Destroying Apto-Timer Home page and cleaning up resources");
+    this.stopHardwareTimer();
+    haptic.stop();
   }
 });
